@@ -1,0 +1,91 @@
+import ENV from "../config/env";
+import {
+  BaseQueryApi,
+  FetchArgs,
+  fetchBaseQuery,
+} from "@reduxjs/toolkit/query";
+import { toast } from "react-toastify";
+
+type CustomError =
+  | string
+  | { message: string }
+  | { errors: string[]; title: string };
+
+const customBaseQuery = fetchBaseQuery({
+  baseUrl: ENV.baseApiUrl,
+  //   prepareHeaders: (headers, { getState }) => {
+  //     const token = getState().auth.token;
+  //     if (token) {
+  //       headers.set("Authorization", `Bearer ${token}`);
+  //     }
+  //     return headers;
+  //   },
+});
+
+const sleep = () => new Promise((resolve) => setTimeout(resolve, 500));
+
+export const baseQueryWithErrorHandling = async (
+  args: string | FetchArgs,
+  api: BaseQueryApi,
+  extraOptions: {}
+) => {
+  await sleep();
+  const result = await customBaseQuery(args, api, extraOptions);
+  if (result.error) {
+    const originalStatus =
+      result.error.status === "PARSING_ERROR" && result.error.originalStatus
+        ? result.error.originalStatus
+        : result.error.status;
+
+    const responseData = result.error.data as CustomError;
+    const isDev = ENV.env === "development";
+    if (isDev) {
+      console.log(result.error);
+      console.log(originalStatus, responseData);
+    }
+    switch (originalStatus) {
+      case 400:
+        if (typeof responseData === "string") {
+          toast.error(responseData || "Bad request");
+        } else if ("errors" in responseData) {
+          toast.error(responseData.title);
+          throw Object.values(responseData.errors).flat().join(", ");
+        }
+        break;
+      case 401:
+        if (isDev) toast.error((responseData as string) || "Unauthorized");
+
+        break;
+      case 404:
+        if (isDev) toast.error((responseData as string) || "Not found");
+        // router.navigate("/not-found");
+        break;
+      case 500:
+        if (typeof responseData !== "string" && "message" in responseData) {
+          if (isDev) toast.error(responseData.message || "Server error");
+          //   router.navigate("/server-error", {
+          //     state: { error: responseData },
+          //   });
+        }
+        break;
+    }
+  }
+};
+
+// Tham số:
+// args: Là tham số bạn gửi đi để xác định endpoint và các parameters cho query. Có thể là URL (string) hoặc là một object kiểu FetchArgs.
+//{url: "/products", method: "GET"}
+// api: Là context, cung cấp thông tin về dispatch, getState, v.v.
+// api = {
+//     dispatch: ...,
+//     getState: ...,
+//     extra: { token: "xyz" },  // Nếu bạn truyền thêm extraOptions
+//     endpoint: "fetchProducts",  // Tên endpoint đang được gọi
+//     type: "query"  // Loại call: query hay mutation
+// }
+// extraOptions: Cung cấp các thông tin bổ sung nếu cần (thường dùng cho thêm options tùy chỉnh, chẳng hạn như headers, config,...).
+// const extraOptions = {
+//   headers: {
+//     Authorization: `Bearer ${token}`,
+//   },
+// };
